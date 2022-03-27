@@ -1,0 +1,4 @@
+elastic/
+eventlog/*.xml
+filebeat/tmp/
+

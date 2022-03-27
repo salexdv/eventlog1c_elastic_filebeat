@@ -1,0 +1,48 @@
+version: '3'
+
+services:
+  
+  elastic:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.17.0
+    container_name: elastic_1c
+    environment:
+      - discovery.type=single-node
+    volumes:
+      - ./elastic:/usr/share/elasticsearch/data
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    networks:
+      - docker_elastic
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:7.17.0
+    container_name: kibana_1c
+    environment:
+      ELASTICSEARCH_HOSTS: '["http://elastic:9200"]'
+    ports:
+      - "5601:5601"
+    networks:
+      - docker_elastic
+    depends_on:
+      - "elastic"
+
+  filebeat:
+    image: docker.elastic.co/beats/filebeat:7.17.0
+    command: filebeat -e -strict.perms=false
+    container_name: filebeat_1c
+    environment:
+      ELASTICSEARCH_HOSTS: '["http://elastic:9200"]'
+    volumes:
+      - ./eventlog/:/usr/share/filebeat/logs/eventlog      
+      - ./filebeat/eventlog_1c.yml:/usr/share/filebeat/filebeat.yml
+      - ./filebeat/tmp:/tmp/filebeat
+    networks:
+      - docker_elastic
+    depends_on:
+      - "elastic"
+  
+
+networks:
+  docker_elastic:
+    driver: bridge

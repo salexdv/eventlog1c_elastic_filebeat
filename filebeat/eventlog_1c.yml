@@ -1,0 +1,147 @@
+# Имя шаблона
+setup.ilm.enabled: false
+setup.template.name: "event-log-1c"
+setup.template.pattern: "event-log-1c"
+
+filebeat.config:
+  modules:
+    path: ${path.config}/modules.d/*.yml
+    reload.enabled: false
+
+# Входящий поток https://www.elastic.co/guide/en/beats/filebeat/current/configuring-output.html
+filebeat.inputs:
+  # Для каждой базы отдельный поток файлов со своим значением Database
+  - type: filestream
+    paths:
+      - /usr/share/filebeat/logs/eventlog/*/event-log-*.xml
+    encoding: utf-8
+    prospector.scanner.check_interval: 60s    
+    parsers:
+      - multiline:
+          type: pattern
+          pattern: "<v8e:Event>$"
+          negate: true
+          match: after
+    fields:
+      Database: TestBase
+
+
+# Обработка данных https://www.elastic.co/guide/en/beats/filebeat/current/filtering-and-enhancing-data.html
+processors:
+  # Извлечение данных события из xml в поле Event
+  - decode_xml:
+      field: message
+      target_field: ""
+      ignore_missing: true
+      ignore_failure: true
+      to_lower: false
+  # Пропускаем сообщения, где нет данных события
+  - drop_event:
+      when:
+        not:
+          has_fields: ["Event"]
+  # Копирование полей
+  - copy_fields:
+      fields:
+        # Добавление в событие имени базы
+        - from: "fields.Database"
+          to: "Database"
+      ignore_missing: false
+      fail_on_error: true
+  # Изменение полей события (перемещение из поля Event в корень)
+  - rename:
+      fields:
+        - from: "Event.Level"
+          to: "Level"
+        - from: "Event.Date"
+          to: "Date"
+        - from: "Event.ApplicationName"
+          to: "ApplicationName"
+        - from: "Event.ApplicationPresentation"
+          to: "ApplicationPresentation"
+        - from: "Event.Event"
+          to: "NestedEvent"
+        - from: "Event.EventPresentation"
+          to: "EventPresentation"
+        - from: "Event.User"
+          to: "User"
+        - from: "Event.UserName"
+          to: "UserName"
+        - from: "Event.Computer"
+          to: "Computer"
+        - from: "Event.Metadata"
+          to: "Metadata"
+        - from: "Event.MetadataPresentation"
+          to: "MetadataPresentation"
+        - from: "Event.Comment"
+          to: "Comment"
+        - from: "Event.Data"
+          to: "Data"
+        - from: "Event.DataPresentation"
+          to: "DataPresentation"
+        - from: "Event.TransactionStatus"
+          to: "TransactionStatus"
+        - from: "Event.TransactionID"
+          to: "TransactionID"
+        - from: "Event.Connection"
+          to: "Connection"
+        - from: "Event.Session"
+          to: "Session"
+        - from: "Event.ServerName"
+          to: "ServerName"
+        - from: "Event.Port"
+          to: "Port"
+        - from: "Event.SyncPort"
+          to: "SyncPort"        
+      ignore_missing: false
+      fail_on_error: true
+  # Извлечение @timestamp из даты события
+  - timestamp:
+      field: "Date"
+      layouts:
+        - '2006-01-02T15:04:05'
+  # Удаление служебных полей из сообщения
+  - drop_fields:
+      fields: ["message", "agent", "log", "input", "host", "ecs", "fields", "Event"]
+      ignore_missing: false
+  # Перереименование поля вложенного события в Event
+  - rename:
+      fields:
+        - from: "NestedEvent"
+          to: "Event"
+      ignore_missing: false
+      fail_on_error: true
+  # Приведение типов
+  - convert:
+      fields:
+        - {from: "Connection", to: "Connection", type: "integer"}
+        - {from: "Session", to: "Session", type: "integer"}
+        - {from: "Port", to: "Port", type: "integer"}
+        - {from: "SyncPort", to: "SyncPort", type: "integer"}
+        - {from: "Date", to: "SyncPort", type: "integer"}
+      ignore_missing: true
+      fail_on_error: false
+  - timestamp:
+      field: "Date"
+      target_field: "Date"
+      layouts:
+        - '2006-01-02T15:04:05'
+  # Добавление идентификатора записи
+  - add_id: ~      
+
+# Отправка в elastic
+output.elasticsearch:
+  enabled: true
+  hosts: '${ELASTICSEARCH_HOSTS:elasticsearch:9200}'
+  index: "event-log-1c-%{+yyyy.MM.dd}"
+
+# Вывод в консоль
+output.console:
+  enabled: false
+  pretty: true
+
+# Вывод в файл
+output.file:
+  enabled: false
+  path: "/tmp/filebeat"
+  filename: filebeat
